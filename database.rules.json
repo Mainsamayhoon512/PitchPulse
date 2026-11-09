@@ -1,0 +1,8 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "live": { ".read": true },
+    "system": { ".read": true }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "pitchpulse",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "summarize": "tsx src/scripts/summarizeCaptures.ts",
+    "typecheck": "tsc --noEmit",
+    "analyze": "tsx src/scripts/analyzeCaptures.ts",
+    "test:connection": "tsx src/scripts/testConnection.ts",
+    "listen": "tsx src/scripts/socketListener.ts",
+    "trace": "tsx src/scripts/traceBalls.ts",
+    "deepdive": "tsx src/scripts/deepDive.ts",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "sync": "tsx src/scripts/sync.ts",
+    "live": "tsx src/scripts/live.ts",
+    "replay": "tsx src/scripts/replay.ts",
+    "api": "tsx src/scripts/api.ts",
+    "api:dev": "tsx watch src/scripts/api.ts",
+    "merge:demo": "tsx src/scripts/mergeDemo.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@fastify/cors": "^11.4.1",
+    "@fastify/rate-limit": "^11.2.2",
+    "@fastify/swagger": "^9.9.3",
+    "@fastify/swagger-ui": "^6.1.3",
+    "@prisma/client": "^6.19.3",
+    "dotenv": "^18.0.9",
+    "fastify": "^5.12.8",
+    "firebase-admin": "^14.5.0",
+    "ioredis": "^6.0.0",
+    "ws": "^8.22.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "prisma": "^6.19.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

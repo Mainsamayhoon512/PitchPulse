@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Who first created a record. Admin-created records get linked to the provider later.
+enum Source {
+  ADMIN
+  PROVIDER
+}
+
+// Competition = a series or tournament.
+// Competition, Team, Player and Venue have our own id plus a nullable providerId,
+// so an admin can create one before the provider's id is known.
+model Competition {
+  id              Int       @id @default(autoincrement())
+  providerId      Int?      @unique
+  title           String
+  abbr            String?
+  type            String?   // tour, tournament, series
+  category        String?   // international, domestic, youth, women
+  status          String?   // live, fixture or result
+  gameFormat      String?   // mixed, odi, test, t20 ...
+  season          String?
+  dateStart       DateTime? @db.Date
+  dateEnd         DateTime? @db.Date
+  country         String?
+  totalMatches    Int?
+  totalRounds     Int?
+  totalTeams      Int?
+  createdBy       Source    @default(PROVIDER)
+  lockedFields    String[]  @default([]) // fields the provider may not overwrite
+  infoSyncedAt    DateTime?
+  squadsSyncedAt  DateTime?
+  matchesSyncedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  rounds  Round[]
+  teams   CompetitionTeam[]
+  squads  SquadEntry[]
+  matches Match[]
+
+  @@index([status])
+}
+
+model Round {
+  rid           Int       @id // provider's round id
+  competitionId Int
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  name          String
+  order         Int?
+  type          String?
+  matchFormat   String?
+  dateStart     DateTime? @db.Date
+  dateEnd       DateTime? @db.Date
+
+  @@index([competitionId])
+}
+
+model Venue {
+  id           Int      @id @default(autoincrement())
+  providerId   Int?     @unique
+  name         String
+  city         String?
+  country      String?
+  capacity     Int?
+  createdBy    Source   @default(PROVIDER)
+  lockedFields String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  matches Match[]
+}
+
+model Team {
+  id           Int      @id @default(autoincrement())
+  providerId   Int?     @unique
+  title        String
+  abbr         String?
+  altName      String?
+  type         String?  // country or club
+  logoUrl      String?
+  thumbUrl     String?
+  country      String?
+  sex          String?
+  teamOwner    String?
+  headCoach    String?
+  createdBy    Source   @default(PROVIDER)
+  lockedFields String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  competitions CompetitionTeam[]
+  squads       SquadEntry[]
+  matchesAsA   Match[] @relation("MatchTeamA")
+  matchesAsB   Match[] @relation("MatchTeamB")
+}
+
+model Player {
+  id            Int       @id @default(autoincrement())
+  providerId    Int?      @unique
+  title         String
+  shortName     String?
+  firstName     String?
+  lastName      String?
+  middleName    String?
+  birthdate     DateTime? @db.Date
+  birthplace    String?
+  country       String?
+  nationality   String?
+  logoUrl       String?   // provider's image
+  playingRole   String?
+  battingStyle  String?
+  bowlingStyle  String?
+  bowlingType   String?
+  fieldingPosition String?
+  facebookUrl   String?
+  twitterUrl    String?
+  instagramUrl  String?
+  bio           String?   // admin only: the provider never sends this
+  photoUrl      String?   // admin only: the provider never sends this
+  createdBy     Source    @default(PROVIDER)
+  lockedFields  String[]  @default([])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  squads SquadEntry[]
+
+  @@index([title])
+}
+
+model CompetitionTeam {
+  competitionId Int
+  teamId        Int
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  team          Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([competitionId, teamId])
+}
+
+// One player in one team's squad for a competition.
+// per_match tours repeat a team with a different gmdate and format, so both are part of the key.
+// They are plain strings (empty when missing) because Postgres treats NULLs as distinct in unique keys.
+model SquadEntry {
+  id            Int    @id @default(autoincrement())
+  competitionId Int
+  teamId        Int
+  playerId      Int
+  gmdate        String @default("")
+  format        String @default("")
+  squadType     String?
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  team          Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  player        Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([competitionId, teamId, playerId, gmdate, format])
+  @@index([playerId])
+}
+
+// Matches come only from the provider, so matchId (the provider's id) is the key.
+model Match {
+  matchId            Int       @id
+  competitionId      Int?
+  competition        Competition? @relation(fields: [competitionId], references: [id])
+  teamAId            Int?
+  teamA              Team?     @relation("MatchTeamA", fields: [teamAId], references: [id])
+  teamBId            Int?
+  teamB              Team?     @relation("MatchTeamB", fields: [teamBId], references: [id])
+  venueId            Int?
+  venue              Venue?    @relation(fields: [venueId], references: [id])
+  title              String
+  shortTitle         String?
+  subtitle           String?
+  matchNumber        String?
+  format             Int?      // raw provider code, see formatStr
+  formatStr          String?
+  status             Int?      // 1 Scheduled, 2 Completed, 3 Live, 4 Cancelled
+  statusStr          String?
+  statusNote         String?
+  gameState          Int?
+  gameStateStr       String?
+  domestic           Boolean   @default(false)
+  teamAScore         String?   // for example "349/8 (50 ov)"
+  teamBScore         String?
+  dateStart          DateTime  // UTC
+  dateEnd            DateTime?
+  umpires            String?
+  referee            String?
+  result             String?
+  resultType         Int?
+  winMargin          String?
+  winningTeamProviderId Int?   // provider's team id, not ours
+  hasCommentary      Boolean   @default(false)
+  hasWagon           Boolean   @default(false)
+  latestInningNumber Int?
+  toss               Json?
+  pitch              Json?
+  weather            Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([competitionId])
+  @@index([status, dateStart])
+}
+
+// Every field the provider changed on an existing record.
+model ChangeLog {
+  id       Int      @id @default(autoincrement())
+  entity   String   // Player, Team, Venue, Competition
+  entityId Int
+  field    String
+  oldValue String?
+  newValue String?
+  source   String   // provider or admin
+  at       DateTime @default(now())
+
+  @@index([entity, entityId])
+}
+
+model SyncRun {
+  id         Int       @id @default(autoincrement())
+  job        String
+  scope      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  ok         Boolean?
+  stats      Json?
+  error      String?
+}
+
+// One innings. The full scorecard is stored once the innings is completed.
+model Innings {
+  iid                    Int      @id // provider's innings id
+  matchId                Int
+  number                 Int
+  name                   String?
+  shortName              String?
+  status                 Int?     // 2 completed, 3 live
+  result                 Int?
+  battingTeamProviderId  Int?
+  fieldingTeamProviderId Int?
+  scores                 String?
+  scoresFull             String?
+  scorecard              Json?
+  updatedAt              DateTime @updatedAt
+
+  @@index([matchId, number])
+}
+
+// One delivery. A correction keeps the same eventId, so the row is overwritten.
+// Wides and no-balls share over and ball with the re-bowl, so those are never the key.
+model Ball {
+  matchId           Int
+  eventId           Int
+  inningsIid        Int
+  inningsNumber     Int?
+  over              Int
+  ball              Int
+  event             String   // ball or wicket
+  batsmanProviderId Int?
+  bowlerProviderId  Int?
+  score             String   // "4", "w", "1wd" ...
+  runs              Int
+  batRun            Int
+  wideRun           Int
+  noballRun         Int
+  byeRun            Int
+  legbyeRun         Int
+  isFour            Boolean
+  isSix             Boolean
+  isFreehit         Boolean
+  commentary        String?
+  wicket            Json?
+  wagon             Json?
+  providerTime      DateTime
+  updatedAt         DateTime @updatedAt
+
+  @@id([matchId, eventId])
+  @@index([matchId, inningsIid, over, ball])
+}
