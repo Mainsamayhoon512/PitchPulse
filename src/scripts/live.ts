@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { config } from "../config";
 import { prisma } from "../db";
+import { cleanupFinished } from "../live/cleanup";
 import { Feed } from "../live/feed";
 import { Leader } from "../live/leader";
 import { parseMessage } from "../live/parse";
@@ -67,6 +68,11 @@ async function main() {
     if (leader.isLeader()) sink.update({ "system/liveHeartbeat": Date.now() }).catch(() => undefined);
   }, 10_000);
 
+  // Finished matches are removed from Firebase after 24 hours (only the leader does this).
+  const cleanup = setInterval(() => {
+    if (!leader.isLeader()) return;
+    cleanupFinished(sink, processor).catch((err) => log.error("Firebase cleanup failed:", err));
+  }, 10 * 60_000);
   const status = setInterval(() => {
     log.info(
       `Status: ${leader.isLeader() ? "leader" : "standby"}, socket ${feed.isOpen() ? "open" : "closed"}, ` +
@@ -79,8 +85,11 @@ async function main() {
     log.info("Shutting down...");
     clearInterval(beat);
     clearInterval(status);
+    clearInterval(cleanup);
     feed.stop();
     await leader.stop();
+    // Let background series syncs finish (at most 30 seconds) before the database and Redis are closed.
+    await Promise.race([processor.waitForSyncs(), new Promise((r) => setTimeout(r, 30_000))]);
     await sink.close();
     await prisma.$disconnect();
     await redis.quit();

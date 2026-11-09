@@ -206,6 +206,9 @@ model Match {
 
   @@index([competitionId])
   @@index([status, dateStart])
+  @@index([dateStart]) // matches on a given day, without a status filter
+  @@index([teamAId]) // matches of a team
+  @@index([teamBId])
 }
 
 // Every field the provider changed on an existing record.

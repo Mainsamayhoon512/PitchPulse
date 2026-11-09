@@ -7,8 +7,7 @@ export async function archiveBalls(rows: BallRow[]): Promise<void> {
   for (let i = 0; i < rows.length; i += 25) {
     await Promise.all(
       rows.slice(i, i + 25).map((row) => {
-        // const { matchId, eventId, ...rest } = row;
-        const { matchId, eventId, providerTime, ...rest } = row;
+        const { matchId, eventId, providerTime, ...rest } = row; // providerTime is kept from the first time we saw the ball
         return prisma.ball.upsert({
           where: { matchId_eventId: { matchId, eventId } },
           create: row,

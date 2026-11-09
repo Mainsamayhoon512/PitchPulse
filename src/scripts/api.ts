@@ -7,7 +7,7 @@ import { redis } from "../redis";
 async function main() {
   const app = await buildApp();
   await app.listen({ port: config.PORT, host: config.API_HOST });
-  log.info(`API listening on port ${config.PORT}. Docs at http://localhost:${config.PORT}/docs`);
+  log.info(`API listening on port ${config.PORT}.${config.API_DOCS_ENABLED ? ` Docs at http://localhost:${config.PORT}/docs` : " Docs are disabled."}`);
 
   const shutdown = async () => {
     log.info("Shutting down API...");

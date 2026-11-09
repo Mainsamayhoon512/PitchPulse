@@ -105,6 +105,13 @@ export default async function matches(app: FastifyInstance) {
         if (innings) where.inningsNumber = innings;
         if (before) where.eventId = { lt: before };
         const rows = await prisma.ball.findMany({ where, orderBy: { eventId: "desc" }, take: limit });
+        if (rows.length === 0) {
+          // No balls: a 404 if we know nothing about the match, otherwise an empty page.
+          const known = await prisma.match.findUnique({ where: { matchId: id }, select: { matchId: true } });
+          if (!known && before === undefined && !(await prisma.ball.findFirst({ where: { matchId: id }, select: { eventId: true } }))) {
+            return null;
+          }
+        }
         const names = await playerNames(rows);
         return {
           items: rows.map((b) => mapBall(b, names)),

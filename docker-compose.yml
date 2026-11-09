@@ -16,5 +16,30 @@ services:
     ports:
       - "6379:6379"
 
+  # The app itself. Not started by a plain "docker compose up -d"; run:  docker compose --profile app up -d --build
+  api:
+    profiles: ["app"]
+    build: .
+    command: npm run api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://cricket:cricket@postgres:5432/cricket
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3000:3000"
+    depends_on: [postgres, redis]
+
+  live:
+    profiles: ["app"]
+    build: .
+    command: npm run live
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://cricket:cricket@postgres:5432/cricket
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./secrets:/app/secrets:ro
+    depends_on: [postgres, redis]
+
 volumes:
   pgdata:

@@ -21,6 +21,7 @@ const schema = z.object({
   // Only turn this on when the API is behind a proxy you control, otherwise clients can fake their IP and dodge the rate limit.
   API_TRUST_PROXY: z.string().default("false"),
   API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().default(120),
+  API_DOCS_ENABLED: z.enum(["true", "false"]).default("true").transform((v) => v === "true"), // Swagger UI at /docs
   API_CORS_ORIGINS: z.string().default("*"), // comma-separated list, or * for any
 });
 

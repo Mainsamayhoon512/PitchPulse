@@ -1,0 +1,5 @@
+# Keep line endings consistent between Windows and Linux (git converts on checkout and commit).
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.ndjson -diff

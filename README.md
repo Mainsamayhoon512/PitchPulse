@@ -25,6 +25,7 @@ The app never calls the provider directly. Live data comes from Firebase; everyt
 - [The live service in detail](#the-live-service-in-detail)
 - [Database model](#database-model)
 - [Project structure](#project-structure)
+- [Docker](#docker)
 - [Testing and replaying recorded matches](#testing-and-replaying-recorded-matches)
 - [Known gaps and not built yet](#known-gaps-and-not-built-yet)
 
@@ -103,7 +104,7 @@ Check the database at any time with `npm run sync -- status` or `npm run db:stud
 
 ## Configuration (.env)
 
-Create a `.env` file in the project root. It is git-ignored; never commit it. Values are validated at start-up by [src/config.ts](src/config.ts), and a clear message is printed if something is missing.
+Copy [.env.example](.env.example) to `.env` in the project root and fill it in. It is git-ignored; never commit it. Values are validated at start-up by [src/config.ts](src/config.ts), and a clear message is printed if something is missing.
 
 | Variable | Required | Default | Meaning |
 | --- | --- | --- | --- |
@@ -120,6 +121,8 @@ Create a `.env` file in the project root. It is git-ignored; never commit it. Va
 | `PORT` | no | `3000` | API port |
 | `API_HOST` | no | `0.0.0.0` | API bind address |
 | `API_RATE_LIMIT_PER_MINUTE` | no | `120` | Requests per minute per client IP |
+| `API_TRUST_PROXY` | no | `false` | Trust `X-Forwarded-For`: `true`, a number of proxies in front (for example `1`), or proxy IPs. Only enable behind a proxy you control, otherwise clients can fake their IP and bypass the rate limit |
+| `API_DOCS_ENABLED` | no | `true` | Set `false` to hide Swagger UI at `/docs` |
 | `API_CORS_ORIGINS` | no | `*` | Comma-separated allowed origins, or `*` for any |
 
 If the Firebase variables are not set, the live service falls back to a **console sink** that prints instead of writing to Firebase.
@@ -134,6 +137,7 @@ If the Firebase variables are not set, the live service falls back to a **consol
 | `npm run sync -- <command>` | Sync from the provider (see [Data sync](#data-sync-rest-to-postgres)) |
 | `npm run replay` | Replay a recorded feed through the live processor (see [Testing](#testing-and-replaying-recorded-matches)) |
 | `npm run merge:demo` | Run the 10 checks of the admin-versus-provider merge rules |
+| `npm test` | Run the automated tests (needs Postgres and Redis running) |
 | `npm run typecheck` | TypeScript type check |
 | `npm run db:push` | Apply the Prisma schema to the database |
 | `npm run db:studio` | Open Prisma Studio to browse the database |
@@ -325,6 +329,8 @@ Rules for the app developer:
 - All times are milliseconds except `info/startsAt`, which is in seconds.
 - Redraw from the latest value; balls and sections can be updated after they first appear (commentary arrives within about a minute, and scorers can correct runs or the batsman).
 
+Matches that finished more than 24 hours ago are removed from Firebase automatically (the live service checks every 10 minutes), but only once Postgres holds the match and its balls. They stay in Postgres and in the REST API.
+
 The full field list for balls and `lastEvent`, and the table of provider event codes, are in the [data reference](Cricket%20Backend%20Data%20and%20API%20Reference.md).
 
 ## Data sync (REST to Postgres)
@@ -395,6 +401,11 @@ database.rules.json         Firebase security rules (read-only for the app)
 docker-compose.yml          Local Postgres 16 and Redis 7
 fixtures/                   A recorded provider feed used for replay and tests
 
+docs/CHANGES.md            What changed after the first release, and where
+tests/                      Automated tests (Vitest)
+Dockerfile                  One image for the API and the live service
+.env.example                Template for the .env file
+
 src/
   config.ts                 Environment variables, validated with zod
   db.ts, redis.ts, logger.ts, utils.ts   Shared clients and helpers
@@ -417,6 +428,7 @@ src/
     sink.ts                 Firebase and console outputs
     leader.ts               Redis leader election
     reconcile.ts            Gap filling over REST
+    cleanup.ts              Removes finished matches from Firebase after 24 hours
 
   sync/                     Provider REST to Postgres
     orchestrator.ts         Info, squads and matches per competition
@@ -430,11 +442,20 @@ src/
                             capture and analysis tools)
 ```
 
+## Docker
+
+One image ([Dockerfile](Dockerfile)) runs both the API and the live service. `docker compose up -d` still starts only Postgres and Redis. To run the whole backend in containers:
+
+```bash
+docker compose --profile app up -d --build     # api on port 3000, plus the live service
+```
+
+The live service reads Firebase credentials from `./secrets` (mounted read-only) and all settings from `.env`. Behind a load balancer, set `API_TRUST_PROXY=1`. Set `API_CORS_ORIGINS` to your allowed origins (the API logs a warning in production if it is still `*`).
+
 ## Testing and replaying recorded matches
 
-There is no separate test runner yet. What exists:
-
-- `npm run typecheck` checks the types.
+- `npm test` runs 22 automated tests (parser, snapshot mapping, live processor, Firebase cleanup, and the API including Swagger and error responses). They need Postgres and Redis (`docker compose up -d`), use Redis database 15 and only read from Postgres. CI runs them on every push ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+- `npm run typecheck` checks the types, including the tests.
 - `npm run merge:demo` checks the 10 admin-versus-provider merge rules (needs Postgres running).
 - `npm run replay` feeds a recorded provider feed through the live processor without needing a live match:
 
@@ -449,8 +470,7 @@ By default it replays `fixtures/live-sample.ndjson` (1,212 recorded messages) at
 - **Admin endpoints** (create, edit and lock records, provider linking, change-log viewer, sign-in and roles) are planned; the merge rules they rely on are built and tested.
 - **OpenAPI contract** is generated from the code today; it is to be reviewed with the Flutter team before it is treated as final.
 - **Match statistics, player career stats, rankings and standings** are not built.
-- **Removing finished matches from Firebase** after about 24 hours is planned.
 - **Strike indicator:** the `batsmen` list has no field marking who is on strike.
 - **Wagon wheel data** (shot position) is stored in Postgres and returned by the balls endpoint, but is not in Firebase.
-- **Deployment, alerting and automated tests** (Cloud Run, Cloud SQL, monitoring, API and pipeline tests, load test) are planned.
+- **Production deployment, alerting and a load test** (Cloud Run, Cloud SQL, monitoring) are planned. A Dockerfile exists but no hosting is set up yet.
 - Everything was tested with the provider's **demo token**; two competitions returned no teams or squads, probably a demo-token limit. Data-licensing terms are still to be confirmed.

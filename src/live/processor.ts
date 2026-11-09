@@ -12,6 +12,8 @@ import { syncCompetition } from "../sync/orchestrator";
 
 const hash = (v: unknown) => createHash("sha1").update(JSON.stringify(v) ?? "").digest("base64");
 const HEARTBEAT_EVERY_MS = 30_000;
+const MISSING_RECHECK_MS = 60_000;
+export const FINISHED_KEY = "live:finished"; // Redis sorted set: matchId scored by the time we first saw it completed
 
 class LatencyTracker {
   private samples = new Map<string, number[]>();
@@ -53,10 +55,9 @@ export class LiveProcessor {
   private lastBeat = new Map<number, number>();
   private pending = new Map<number, SnapshotMsg>();
   private running = new Set<number>();
-  private ballRows = new Map<string, BallRow>();
-  private debugShown = 0;
   private ensureAt = new Map<number, number>();
   private syncs = new Set<Promise<void>>();
+  private missingUntil = new Map<number, number>();
 
   constructor(
     private sink: LiveSink,
@@ -159,6 +160,15 @@ export class LiveProcessor {
     while (this.syncs.size > 0) await Promise.all([...this.syncs]);
   }
 
+  /** Forget everything remembered about a match, so a later snapshot writes it to Firebase again in full. */
+  forgetMatch(matchId: number): void {
+    this.sectionHashes.delete(matchId);
+    this.inningsHashes.clear(); // innings are keyed by iid, not by match; they are cheap to rebuild
+    this.missingUntil.delete(matchId);
+    const prefix = `${matchId}:`;
+    for (const k of this.ballHashes.keys()) if (k.startsWith(prefix)) this.ballHashes.delete(k);
+  }
+
   private hashesFor(matchId: number): Map<string, string> {
     let m = this.sectionHashes.get(matchId);
     if (!m) {
@@ -170,40 +180,18 @@ export class LiveProcessor {
 
   /** Which balls are new or changed. The hash is remembered only after a successful write. */
   private diffBalls(matchId: number, rows: BallRow[], commits: (() => void)[]) {
-    //if (this.ballHashes.size > 200_000) this.ballHashes.clear();
-    if (this.ballHashes.size > 200_000) {
-      this.ballHashes.clear();
-      this.ballRows.clear();
-    }
+    if (this.ballHashes.size > 200_000) this.ballHashes.clear();
     const changed: BallRow[] = [];
     const updates: Record<string, unknown> = {};
     for (const b of rows) {
       const key = `${matchId}:${b.eventId}`;
-      // const h = hash(b);
-      const h = hash({ ...b, providerTime: 0 });
+      const h = hash({ ...b, providerTime: 0 }); // the provider changes every ball's timestamp on each snapshot, so ignore it
       const old = this.ballHashes.get(key);
       if (old === h) continue;
-      //if (old !== undefined) bump(this.stats, "ball_corrections");
-      
-      if (old !== undefined) {
-        bump(this.stats, "ball_corrections");
-        const prev = this.ballRows.get(key);
-        if (prev && this.debugShown < 5) {
-          this.debugShown++;
-          const diffs = (Object.keys(b) as (keyof BallRow)[])
-            .filter((k) => JSON.stringify(prev[k]) !== JSON.stringify(b[k]))
-            .map((k) => `${k}: ${JSON.stringify(prev[k])} -> ${JSON.stringify(b[k])}`);
-          log.info(`Ball ${key} changed: ${diffs.join("; ")}`);
-        }
-      }
-
+      if (old !== undefined) bump(this.stats, "ball_corrections");
       changed.push(b);
       updates[`${this.root}/${matchId}/balls/${b.eventId}`] = ballToFirebase(b);
-    //   commits.push(() => this.ballHashes.set(key, h));
-        commits.push(() => {
-            this.ballHashes.set(key, h);
-            this.ballRows.set(key, b);
-        });
+      commits.push(() => this.ballHashes.set(key, h));
     }
     return { changed, updates };
   }
@@ -269,6 +257,10 @@ export class LiveProcessor {
     if (this.opts.archive) {
       const ok = await this.archive(matchId, mapped, changed, hashes);
       if (!ok) return; // ball hashes stay uncommitted so the next snapshot retries
+      if (this.opts.cacheSnapshots && mapped.matchUpdate?.status === 2) {
+        // Completed AND saved to Postgres: from now on the cleanup job may remove it from Firebase after 24 hours.
+        redis.zadd(FINISHED_KEY, "NX", Date.now(), String(matchId)).catch((e) => log.warn("Redis cache failed:", e));
+      }
     }
     ballCommits.forEach((c) => c());
   }
@@ -294,10 +286,17 @@ export class LiveProcessor {
 
       if (mapped.matchUpdate) {
         const h = hash(mapped.matchUpdate);
-        if (hashes.get("_match") !== h) {
+        // A match missing from the database is re-checked at most once a minute, not on every snapshot.
+        const missing = (this.missingUntil.get(matchId) ?? 0) > Date.now();
+        if (hashes.get("_match") !== h && !missing) {
           const updated = await updateMatchStatus(matchId, mapped.matchUpdate);
-          if (updated > 0) hashes.set("_match", h);
-          else this.ensureMatch(matchId, mapped.competitionProviderId);
+          if (updated > 0) {
+            hashes.set("_match", h);
+            this.missingUntil.delete(matchId);
+          } else {
+            this.missingUntil.set(matchId, Date.now() + MISSING_RECHECK_MS);
+            this.ensureMatch(matchId, mapped.competitionProviderId);
+          }
         }
       }
       if (mapped.players.length > 0) {

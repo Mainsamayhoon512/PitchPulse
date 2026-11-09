@@ -6,6 +6,7 @@
   "scripts": {
     "summarize": "tsx src/scripts/summarizeCaptures.ts",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "analyze": "tsx src/scripts/analyzeCaptures.ts",
     "test:connection": "tsx src/scripts/testConnection.ts",
     "listen": "tsx src/scripts/socketListener.ts",
@@ -42,6 +43,7 @@
     "@types/ws": "^8.18.2",
     "prisma": "^6.19.3",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7"
   }
 }

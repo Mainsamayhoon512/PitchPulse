@@ -11,7 +11,7 @@ import players from "./routes/players";
 import series from "./routes/series";
 import teams from "./routes/teams";
 
-function parseTrustProxy(v: string): boolean | string[] | ((address: string, hop: number) => boolean) {
+export function parseTrustProxy(v: string): boolean | string[] | ((address: string, hop: number) => boolean) {
   const s = v.trim().toLowerCase();
   if (s === "" || s === "false") return false;
   if (s === "true") return true;
@@ -40,8 +40,11 @@ export async function buildApp() {
       tags: [{ name: "Matches" }, { name: "Series" }, { name: "Teams" }, { name: "Players" }],
     },
   });
-  await app.register(swaggerUi, { routePrefix: "/docs" });
+  if (config.API_DOCS_ENABLED) await app.register(swaggerUi, { routePrefix: "/docs" });
 
+  if (config.API_CORS_ORIGINS === "*" && process.env.NODE_ENV === "production") {
+    app.log.warn("API_CORS_ORIGINS is * in production. Set it to the origins that should be allowed.");
+  }
   await app.register(cors, {
     origin: config.API_CORS_ORIGINS === "*" ? true : config.API_CORS_ORIGINS.split(",").map((s) => s.trim()),
   });
