@@ -60,6 +60,7 @@ async function main() {
     if (limit > 0 && sent >= limit) break;
   }
   await processor.drain();
+  await processor.waitForSyncs(); // series syncs started in the background must finish before we close Postgres and Redis
 
   console.log(`\nDone in ${((Date.now() - started) / 1000).toFixed(1)}s. Fed ${sent} messages (${ignored} unrecognised).`);
   console.log("Processor:", processor.stats);

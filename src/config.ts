@@ -17,6 +17,9 @@ const schema = z.object({
   CAPTURE_DIR: z.string().default("captures"),
   PORT: z.coerce.number().int().default(3000),
   API_HOST: z.string().default("0.0.0.0"),
+  // Trust X-Forwarded-For? "false" (default), "true", a number of proxy hops (e.g. 1), or trusted proxy IPs/CIDRs (comma-separated).
+  // Only turn this on when the API is behind a proxy you control, otherwise clients can fake their IP and dodge the rate limit.
+  API_TRUST_PROXY: z.string().default("false"),
   API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().default(120),
   API_CORS_ORIGINS: z.string().default("*"), // comma-separated list, or * for any
 });

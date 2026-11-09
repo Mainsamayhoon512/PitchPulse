@@ -56,6 +56,7 @@ export class LiveProcessor {
   private ballRows = new Map<string, BallRow>();
   private debugShown = 0;
   private ensureAt = new Map<number, number>();
+  private syncs = new Set<Promise<void>>();
 
   constructor(
     private sink: LiveSink,
@@ -145,10 +146,17 @@ export class LiveProcessor {
     if (Date.now() - (this.ensureAt.get(cid) ?? 0) < 30 * 60_000) return; // at most once per 30 minutes per series
     this.ensureAt.set(cid, Date.now());
     log.info(`Match ${matchId} is not in the database. Syncing competition ${cid}...`);
-    syncCompetition(cid).then(
+    const job = syncCompetition(cid).then(
       () => log.info(`Competition ${cid} synced`),
       (err) => log.error(`Sync of competition ${cid} failed:`, err),
     );
+    this.syncs.add(job);
+    void job.finally(() => this.syncs.delete(job));
+  }
+
+  /** Waits for background series syncs started by ensureMatch. Call before closing the database or Redis. */
+  async waitForSyncs(): Promise<void> {
+    while (this.syncs.size > 0) await Promise.all([...this.syncs]);
   }
 
   private hashesFor(matchId: number): Map<string, string> {

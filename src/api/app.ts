@@ -11,10 +11,21 @@ import players from "./routes/players";
 import series from "./routes/series";
 import teams from "./routes/teams";
 
+function parseTrustProxy(v: string): boolean | string[] | ((address: string, hop: number) => boolean) {
+  const s = v.trim().toLowerCase();
+  if (s === "" || s === "false") return false;
+  if (s === "true") return true;
+  if (/^\d+$/.test(s)) {
+    const hops = Number(s); // trust this many proxies in front of the API
+    return (_address, hop) => hop < hops;
+  }
+  return v.split(",").map((x) => x.trim()).filter(Boolean);
+}
+
 export async function buildApp() {
   const app = Fastify({
     logger: { level: "info" },
-    trustProxy: true, // behind a load balancer, use the real client address
+    trustProxy: parseTrustProxy(config.API_TRUST_PROXY), // see API_TRUST_PROXY in config.ts
   });
 
   // API documentation: Swagger page at /docs, the OpenAPI file at /docs/json
